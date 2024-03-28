@@ -47,13 +47,12 @@ func main() {
 	//creating use cases
 	createOrderUseCase := NewCreateOrderUseCase(db, eventDispatcher)
 	listOrdersUseCase := NewListOrdersUseCase(db)
-
-	// creating a new gRPC server and defing its services
+	
+	// creating a new gRPC server
 	grpcServer := grpc.NewServer()
-	createOrderService := service.NewOrderService(*createOrderUseCase)
-	pb.RegisterOrderServiceServer(grpcServer, createOrderService)
-	listOrdersService := service.NewListOrdersService(*listOrdersUseCase)
-	pb.RegisterListOrdersServiceServer(grpcServer, listOrdersService)
+	orderService := service.NewOrderService(*createOrderUseCase, *listOrdersUseCase)
+	pb.RegisterOrderServiceServer(grpcServer, orderService)
+
 	reflection.Register(grpcServer)
 	fmt.Println("Starting gRPC server on port", configs.GRPCServerPort)
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", configs.GRPCServerPort))

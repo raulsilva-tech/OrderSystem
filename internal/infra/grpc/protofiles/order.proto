@@ -27,11 +27,12 @@ message OrderList{
   repeated Order orders = 1;
 }
 
-service ListOrdersService {
-  rpc ListOrders(blank) returns (OrderList){}
-}
+// service ListOrdersService {
+//   rpc ListOrders(blank) returns (OrderList){}
+// }
 
 service OrderService {
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse){}
+  rpc ListOrders(blank) returns (OrderList){}
 }
 
