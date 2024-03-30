@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	graphql_handler "github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
@@ -47,7 +53,7 @@ func main() {
 	//creating use cases
 	createOrderUseCase := NewCreateOrderUseCase(db, eventDispatcher)
 	listOrdersUseCase := NewListOrdersUseCase(db)
-	
+
 	// creating a new gRPC server
 	grpcServer := grpc.NewServer()
 	orderService := service.NewOrderService(*createOrderUseCase, *listOrdersUseCase)
@@ -61,14 +67,6 @@ func main() {
 	}
 	go grpcServer.Serve(lis)
 
-	//creating webserver
-	webserver := webserver.NewWebServer(configs.WebServerPort)
-	webOrderHandler := NewWebOrderHandler(db, eventDispatcher)
-	webserver.AddHandler("/order", webOrderHandler.Create)
-	webserver.AddHandler("/orders", webOrderHandler.GetAll)
-	fmt.Println("Starting web server on port", configs.WebServerPort)
-	go webserver.Start()
-
 	//creating GraphQL server
 	srv := graphql_handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{
 		CreateOrderUseCase: *createOrderUseCase,
@@ -77,7 +75,38 @@ func main() {
 	http.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	http.Handle("/query", srv)
 	fmt.Println("Starting GraphQL server on port", configs.GraphQLServerPort)
-	http.ListenAndServe(":"+configs.GraphQLServerPort, nil)
+	go http.ListenAndServe(":"+configs.GraphQLServerPort, nil)
+
+	//creating webserver
+	webserver := webserver.NewWebServer(configs.WebServerPort)
+	webOrderHandler := NewWebOrderHandler(db, eventDispatcher)
+	webserver.AddHandler("/", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(4 * time.Second)
+		w.Write([]byte("Webserver running successfully \n"))
+	})
+	webserver.AddHandler("/order", webOrderHandler.Create)
+	webserver.AddHandler("/orders", webOrderHandler.GetAll)
+	fmt.Println("Starting web server on port", configs.WebServerPort)
+	go webserver.Start()
+
+	//create channel to receive system interruptions
+	stop := make(chan os.Signal, 1)
+	//set the channel to receive the signal
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	//wait for the signal
+	<-stop
+
+	//set a new context with 5 seconds timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	fmt.Println("Shutting down web server ... ")
+	//shutting down the server using the context with timeout interval
+	if err := webserver.Shutdown(ctx); err != nil {
+		log.Fatalf("Could not gracefully shutdwon the server: %v \n", err)
+	}
+
+	fmt.Println("Server stopped")
 }
 
 func getRabbitMQChannel() *amqp.Channel {
